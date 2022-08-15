@@ -84,3 +84,4 @@ vocoder/saved_models/*
 /saved_models/default_lightning/synthesizer.pt
 /saved_models/defaukt/synthesizer_000050.pt
 /saved_models/default/synthesizer_000050.pt
+/saved_models/

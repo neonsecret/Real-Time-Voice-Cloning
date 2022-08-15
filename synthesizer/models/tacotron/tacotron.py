@@ -402,6 +402,18 @@ class Tacotron(nn.Module):
             attn_scores.append(scores)
             stop_outputs.extend([stop_tokens] * self.r)
 
+        # for t in range(0, steps, self.r):
+        #     prenet_in = m[:, :, t - 1] if t > 0 else go_frame
+        #     mel_frames, scores, hidden_states, cell_states, context_vec, stop_tokens = \
+        #         self.decoder(encoder_seq, encoder_seq_proj, prenet_in,
+        #                      hidden_states, cell_states, context_vec, t, x)
+        #     mel_outputs.append(mel_frames)
+        #     attn_scores.append(scores)
+        #     stop_outputs.extend([stop_tokens] * self.r)
+        #     # Stop the loop when all stop tokens in batch exceed threshold
+        #     if (stop_tokens > 0.5).all() and t > 10:
+        #         break
+
         # Concat the mel outputs into sequence
         mel_outputs = torch.cat(mel_outputs, dim=2)
 
@@ -479,7 +491,8 @@ class Tacotron(nn.Module):
 
     def init_model(self):
         for p in self.parameters():
-            if p.dim() > 1: nn.init.xavier_uniform_(p)
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
 
     def get_step(self):
         return self.step.data.item()

@@ -71,7 +71,7 @@ class Synthesizer:
 
     def synthesize_spectrograms(self, text,
                                 embeddings: Union[np.ndarray, List[np.ndarray]],
-                                return_alignments=False):
+                                return_alignments=True):
         """
         Synthesizes mel spectrograms from texts and speaker embeddings.
 
@@ -114,6 +114,7 @@ class Synthesizer:
             while np.max(m[:, -1]) < hparams.tts_stop_threshold:
                 m = m[:, :-1]
             specs.append(m)
+        specs = mels
 
         if self.verbose:
             print("\n\nDone.\n")

@@ -19,12 +19,13 @@ from synthesizer.utils.plot import plot_spectrogram
 from synthesizer.utils.symbols import symbols
 from synthesizer.utils.text import sequence_to_text
 from vocoder.display import *
-
+import warnings
 # ah yes, the speed up
 torch.autograd.set_detect_anomaly(False)
 torch.autograd.profiler.profile(False)
 torch.autograd.profiler.emit_nvtx(False)
 torch.backends.cudnn.benchmark = False
+warnings.filterwarnings("ignore", category=UserWarning)
 
 dl_logger = Logger(backends=[JSONStreamBackend(Verbosity.DEFAULT, 'log.txt'),
                              StdOutBackend(Verbosity.VERBOSE)])
@@ -134,7 +135,7 @@ def train(run_id: str, syn_dir: Path, models_dir: Path, save_every: int, backup_
         model.load(weights_fpath, optimizer)
         print("Tacotron weights loaded from step %d" % model.step)
         gradinit_do = False
-    r, lr, max_step, batch_size = hparams.tts_schedule_dict[hparams.get_max(model.step - 40000)]
+    r, lr, max_step, batch_size = hparams.tts_schedule_dict[hparams.get_max(model.step)]
     if force_restart or not weights_fpath.exists():
         model.save(weights_fpath, optimizer)
     else:
@@ -147,10 +148,8 @@ def train(run_id: str, syn_dir: Path, models_dir: Path, save_every: int, backup_
     collate_fn = partial(collate_synthesizer, r=r, hparams=hparams)
     if gradinit_do:
         gradinit_trainloader = DataLoader(dataset, gradinit_bsize, shuffle=True, num_workers=4, collate_fn=collate_fn,
-                                          pin_memory=True)
+                                          pin_memory=True, timeout=300)
         model = gradinit(model, gradinit_trainloader, dataset, Struct(**args))
-
-    model.r = r
 
     # Begin the training
     simple_table([(f"Steps with r={r}", str(training_steps // 1000) + "k Steps"),
@@ -159,105 +158,113 @@ def train(run_id: str, syn_dir: Path, models_dir: Path, save_every: int, backup_
                   ("Outputs/Step (r)", model.r)])
 
     data_loader = DataLoader(dataset, batch_size, shuffle=True, num_workers=4, collate_fn=collate_fn,
-                             pin_memory=True)
+                             pin_memory=True, timeout=300)
 
     total_iters = len(dataset)
     steps_per_epoch = np.ceil(total_iters / batch_size).astype(np.int32)
     epochs = np.ceil(training_steps / steps_per_epoch).astype(np.int32)
     dt_len = len(data_loader)
     print("Printing every", print_every, "steps")
-    for epoch in range(1, epochs + 1):
-        for i, (texts, mels, embeds, idx) in enumerate(data_loader, 1):
-            if perf_limit and i >= 500:  # leave this to me, should be 500
-                break
+    while True:
+        r, lr, max_step, batch_size = hparams.tts_schedule_dict[hparams.get_max(model.step)]
+        model.r = r
+        try:
+            for epoch in range(1, epochs + 1):
+                for i, (texts, mels, embeds, idx) in enumerate(data_loader, 1):
+                    if perf_limit and i >= 500:  # for testing the dataset, 500 will be enough
+                        break
 
-            start_time = time.time()
-            # Generate stop tokens for training
-            stop = torch.ones(mels.shape[0], mels.shape[2], device=device)
-            for j, k in enumerate(idx):
-                stop[j, :int(len(mels[j])) - 1] = 0
+                    start_time = time.time()
+                    # Generate stop tokens for training
+                    stop = torch.ones(mels.shape[0], mels.shape[2], device=device)
+                    for j, k in enumerate(idx):
+                        stop[j, :int(len(mels[j])) - 1] = 0
 
-            texts = texts.to(device)
-            mels = mels.to(device)
-            embeds = embeds.to(device)
+                    # switch to gpu
+                    texts = texts.to(device)
+                    mels = mels.to(device)
+                    embeds = embeds.to(device)
 
-            use_amp = bool(use_amp)
+                    use_amp = bool(use_amp)
 
-            with autocast(enabled=use_amp):
-                m1_hat, m2_hat, attention, stop_pred = model(texts, mels, embeds)
+                    with autocast(enabled=use_amp):
+                        # forward pass
+                        m1_hat, m2_hat, attention, stop_pred = model(texts, mels, embeds)
 
-            m1_loss = F.mse_loss(m1_hat, mels) + F.l1_loss(m1_hat, mels)
-            m2_loss = F.mse_loss(m2_hat, mels)
-            stop_loss = F.binary_cross_entropy(stop_pred, stop)
+                    m1_loss = F.mse_loss(m1_hat, mels) + F.l1_loss(m1_hat, mels)
+                    m2_loss = F.mse_loss(m2_hat, mels)
+                    stop_loss = F.binary_cross_entropy(stop_pred, stop)  # TODO pad input to target
 
-            loss = m1_loss + m2_loss + stop_loss
+                    loss = m1_loss + m2_loss + stop_loss
 
-            optimizer.zero_grad(set_to_none=True)
-            scaler.scale(loss).backward()
-            scaler.unscale_(optimizer)
+                    optimizer.zero_grad(set_to_none=True)
+                    scaler.scale(loss).backward()
+                    scaler.unscale_(optimizer)
 
-            if hparams.tts_clip_grad_norm is not None:
-                grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), hparams.tts_clip_grad_norm)
-                if np.isnan(grad_norm.cpu()):
-                    print("grad_norm was NaN!")
+                    if hparams.tts_clip_grad_norm is not None:
+                        grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), hparams.tts_clip_grad_norm)
+                        if np.isnan(grad_norm.cpu()):
+                            print("grad_norm was NaN!")
 
-            scaler.step(optimizer)
-            scaler.update()
+                    scaler.step(optimizer)
+                    scaler.update()
 
-            time_window.append(time.time() - start_time)
-            loss_window.append(loss.item())
+                    time_window.append(time.time() - start_time)
+                    loss_window.append(loss.item())
 
-            step = model.get_step()
-            k = step // 1000
+                    step = model.get_step()
+                    k = step // 1000
 
-            msg = {
-                "Loss": f"{loss_window.average:#.4}",
-                "steps/s": f"{1. / time_window.average:#.2}",
-                "Step": step,
-                "One step time": str(round(time.time() - start_time, 2)) + "s"
-            }
-            if i % print_every == 0:
-                dl_logger.log(step=(epoch, str(i) + "/" + str(dt_len)), data=msg)
-            # Backup or save model as appropriate
-            if backup_every != 0 and step % backup_every == 0:
-                backup_fpath = weights_fpath.parent / f"synthesizer_{k:06d}.pt"
-                model.save(backup_fpath, optimizer)
+                    msg = {
+                        "Loss": f"{loss_window.average:#.4}",
+                        "steps/s": f"{1. / time_window.average:#.2}",
+                        "Step": step,
+                        "One step time": str(round(time.time() - start_time, 2)) + "s"
+                    }
+                    if i % print_every == 0:
+                        dl_logger.log(step=(epoch, str(i) + "/" + str(dt_len)), data=msg)
+                    # Backup or save model as appropriate
+                    if backup_every != 0 and step % backup_every == 0:
+                        backup_fpath = weights_fpath.parent / f"synthesizer_{k:06d}.pt"
+                        model.save(backup_fpath, optimizer)
 
-            if save_every != 0 and step % save_every == 0:
-                model.save(weights_fpath, optimizer)
-                dl_logger.log("INFO", data={
-                    "status": "saved.."
-                })
-                dl_logger.flush()
+                    if save_every != 0 and step % save_every == 0:
+                        model.save(weights_fpath, optimizer)
+                        dl_logger.log("INFO", data={
+                            "status": "saved.."
+                        })
+                        dl_logger.flush()
 
-            # Evaluate model to generate samples
-            epoch_eval = hparams.tts_eval_interval == -1 and i == steps_per_epoch  # If epoch is done
-            step_eval = hparams.tts_eval_interval > 0 and step % hparams.tts_eval_interval == 0  # Every N steps
-            if epoch_eval or step_eval:
-                for sample_idx in range(hparams.tts_eval_num_samples):
-                    # At most, generate samples equal to number in the batch
-                    if sample_idx + 1 <= len(texts):
-                        # Remove padding from mels using frame length in metadata
-                        mel_length = int(dataset.metadata[idx[sample_idx]][4])
-                        mel_prediction = np_now(m2_hat[sample_idx]).T[:mel_length]
-                        target_spectrogram = np_now(mels[sample_idx]).T[:mel_length]
-                        attention_len = mel_length // model.r
+                    # Evaluate model to generate samples
+                    epoch_eval = hparams.tts_eval_interval == -1 and i == steps_per_epoch  # If epoch is done
+                    step_eval = hparams.tts_eval_interval > 0 and step % hparams.tts_eval_interval == 0  # Every N steps
+                    if epoch_eval or step_eval:
+                        for sample_idx in range(hparams.tts_eval_num_samples):
+                            # At most, generate samples equal to number in the batch
+                            if sample_idx + 1 <= len(texts):
+                                # Remove padding from mels using frame length in metadata
+                                mel_length = int(dataset.metadata[idx[sample_idx]][4])
+                                mel_prediction = np_now(m2_hat[sample_idx]).T[:mel_length]
+                                target_spectrogram = np_now(mels[sample_idx]).T[:mel_length]
+                                attention_len = mel_length // model.r
 
-                        eval_model(attention=np_now(attention[sample_idx][:, :attention_len]),
-                                   mel_prediction=mel_prediction,
-                                   target_spectrogram=target_spectrogram,
-                                   input_seq=np_now(texts[sample_idx]),
-                                   step=step,
-                                   plot_dir=plot_dir,
-                                   mel_output_dir=mel_output_dir,
-                                   wav_dir=wav_dir,
-                                   sample_num=sample_idx + 1,
-                                   loss=loss,
-                                   hparams=hparams)
+                                eval_model(attention=np_now(attention[sample_idx][:, :attention_len]),
+                                           mel_prediction=mel_prediction,
+                                           target_spectrogram=target_spectrogram,
+                                           input_seq=np_now(texts[sample_idx]),
+                                           step=step,
+                                           plot_dir=plot_dir,
+                                           mel_output_dir=mel_output_dir,
+                                           wav_dir=wav_dir,
+                                           sample_num=sample_idx + 1,
+                                           loss=loss,
+                                           hparams=hparams)
 
-            # Break out of loop to update training schedule
-            if step >= max_step:
-                break
+                    # Break out of loop to update training schedule
+                    if step >= max_step:
+                        break
+        except:
+            pass
 
 
 def test(model, device, data_loader, dataset):

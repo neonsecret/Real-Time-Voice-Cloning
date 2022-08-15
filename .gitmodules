@@ -1,0 +1,6 @@
+[submodule "synthesizer/models/TPGST-Tacotron"]
+	path = synthesizer/models/TPGST-Tacotron
+	url = https://github.com/neonsecret/TPGST-Tacotron
+[submodule "synthesizer/models/qtacotron"]
+	path = synthesizer/models/qtacotron
+	url = https://github.com/neonsecret/Q-Tacotron

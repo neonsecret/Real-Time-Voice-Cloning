@@ -1,6 +1,6 @@
 # Text To Speech With Voice Cloning Feature (by neonsecret)
 This repository is an implementation of [Transfer Learning from Speaker Verification to
-Multispeaker Text-To-Speech Synthesis](https://arxiv.org/pdf/1806.04558.pdf) (SV2TTS) with a vocoder that works in real-time. 
+Multispeaker Text-To-Speech Synthesis](https://arxiv.org/pdf/1806.04558.pdf) (SV2TTS), with custom tweaks. 
 ## Differences from parent
 * Cleaned tensorflow requirement
 * Added russian language support (+guide how to add other languages)
@@ -8,7 +8,15 @@ Multispeaker Text-To-Speech Synthesis](https://arxiv.org/pdf/1806.04558.pdf) (SV
 * Bilingual and single language model available
 
 ### Setup
-### 0. delete everything from the directory, clone it from sratch.
+### 0. delete everything from the directory, clone it from sratch
+```
+git clone https://github.com/neonsecret/TTS-With-Voice-Cloning-Multilang
+```
+or if you already cloned it
+```
+cd TTS-With-Voice-Cloning-Multilang
+git pull
+```
 
 ### 1. Install Requirements
 1. Both Windows and Linux are supported. A GPU is not required on machine level, but without it it will take ages to train anything.

@@ -59,7 +59,7 @@ hparams = HParams(
     tts_num_highways=4,
     tts_dropout=0.5,
     tts_cleaner_names=["english_cleaners"],
-    tts_stop_threshold=-3.4,  # Value below which audio generation ends.
+    tts_stop_threshold=-3.5,  # Value below which audio generation ends.
     # For example, for a range of [-4, 4], this
     # will terminate the sequence at the first
     # frame that has all values < -3.4

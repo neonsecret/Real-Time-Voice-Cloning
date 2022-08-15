@@ -6,13 +6,13 @@ import librosa
 import numpy as np
 import soundfile as sf
 import torch
+from matplotlib import pyplot as plt
 
 from encoder import inference as encoder
 from encoder.params_model import model_embedding_size as speaker_embedding_size
 from synthesizer.models.tacotron.inference import Synthesizer
 from utils.argutils import print_args
 from vocoder import inference as vocoder
-from synthesizer.g2p import g2p_main
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
@@ -91,7 +91,7 @@ if __name__ == '__main__':
     # illustrate that
     embeds = [embed]
     print("\tTesting the synthesizer... ")
-    mels = synthesizer.synthesize_spectrograms("тестовый текст", embeds)
+    mels, _ = synthesizer.synthesize_spectrograms("тестовый текст", embeds)
 
     # The vocoder synthesizes one waveform at a time, but it's more efficient for long ones. We
     # can concatenate the mel spectrograms to a single one.
@@ -155,7 +155,9 @@ if __name__ == '__main__':
             embeds = [embed]
             # If you know what the attention layer alignments are, you can retrieve them here by
             # passing return_alignments=True
-            specs = synthesizer.synthesize_spectrograms(text, embeds)
+            specs, alignments = synthesizer.synthesize_spectrograms(text, embeds)
+            plt.imshow(alignments[0].detach().cpu().T.numpy(), cmap='gray')
+            plt.show()
             spec = specs[0]
             print("Created the mel spectrogram")
 

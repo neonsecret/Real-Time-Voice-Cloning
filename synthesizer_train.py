@@ -63,12 +63,18 @@ if __name__ == "__main__":
     parser.add_argument('--n_epoch', default=200, type=int,
                         help='total number of epochs')
 
+    parser.add_argument('--use_qtacotron', default=True, action='store_true',
+                        help=r'Whether to use qtacotron.')
+
     args = parser.parse_args()
     print_args(args, parser)
 
-    from synthesizer.models.tacotron.hparams import hparams
-    from synthesizer.models.tacotron.train import train
+    if args.use_qtacotron:
+        from synthesizer.models.qtacotron.train import train
+    else:
+        from synthesizer.models.tacotron.train import train
 
+    from synthesizer.models.tacotron.hparams import hparams
     args.hparams = hparams.parse(args.hparams)
 
     # Run the training
