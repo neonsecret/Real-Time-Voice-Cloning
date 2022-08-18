@@ -1,3 +1,4 @@
+import os
 from multiprocessing.pool import Pool
 from synthesizer.models.tacotron import audio
 from functools import partial
@@ -246,10 +247,11 @@ def embed_utterance(fpaths, encoder_model_fpath):
 
     # Compute the speaker embedding of the utterance
     wav_fpath, embed_fpath = fpaths
-    wav = np.load(wav_fpath)
-    wav = encoder.preprocess_wav(wav)
-    embed = encoder.embed_utterance(wav)
-    np.save(embed_fpath, embed, allow_pickle=False)
+    if not os.path.isfile(embed_fpath):
+        wav = np.load(wav_fpath)
+        wav = encoder.preprocess_wav(wav)
+        embed = encoder.embed_utterance(wav)
+        np.save(embed_fpath, embed, allow_pickle=False)
 
 
 def create_embeddings(synthesizer_root: Path, encoder_model_fpath: Path, n_processes: int):

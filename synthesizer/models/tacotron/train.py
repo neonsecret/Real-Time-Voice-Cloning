@@ -88,7 +88,7 @@ def train(run_id: str, syn_dir: Path, models_dir: Path, save_every: int, backup_
         from torch.cpu.amp import autocast
         print("Using device:", device)
 
-    print("\nInitialising Tacotron Tweaked Model...\n")
+    print("\nInitialising Tacotron Model...\n")
     model = Tacotron(embed_dims=hparams.tts_embed_dims,
                      num_chars=len(symbols),
                      encoder_dims=hparams.tts_encoder_dims,
